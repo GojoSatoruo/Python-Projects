@@ -1,0 +1,281 @@
+public class AdwS3TriggerService {
+
+	private final S3Client s3Client;
+	private final S3ObjectParser s3ObjectParser;
+	private final String pollingEndpoint;
+	private final String s3RdsPrefix;
+	private final String s3RdsFilenameStartsWith;
+	private final String s3ControlFilePrefix;
+	private final String s3ControlFilenameStartsWith;
+	private final TeradataRepository teradataRepository;
+	private final CSVMessageGetterRepository csvMessageGetterRepository;
+	private final RdsMessageGetterRepository rdsMessageGetterRepository;
+	private final SimpleDateFormat dateTimeFormat = new SimpleDateFormat ( "yyyy-MM-dd HH:mm:ss" );
+	private final SimpleDateFormat dateFormat = new SimpleDateFormat ( "yyyy-MM-dd" );
+
+	public AdwS3TriggerService ( S3Client s3Client , S3ObjectParser s3ObjectParser , @Value ("${polling.base-url}") String pollingEndpoint , @Value ("${s3.rds.prefix}") String s3RdsPrefix , @Value ("${s3.rds.filename}")String s3RdsFilenameStartsWith , @Value ("${s3.control.prefix}") String s3ControlFilePrefix , @Value ("${s3.control.filename}")String s3ControlFilenameStartsWith , TeradataRepository teradataRepository , CSVMessageGetterRepository csvMessageGetterRepository , RdsMessageGetterRepository rdsMessageGetterRepository ) {
+		this.s3Client = s3Client;
+		this.s3ObjectParser = s3ObjectParser;
+		this.pollingEndpoint = pollingEndpoint;
+		this.s3RdsPrefix = s3RdsPrefix;
+		this.s3RdsFilenameStartsWith = s3RdsFilenameStartsWith;
+		this.s3ControlFilePrefix = s3ControlFilePrefix;
+		this.s3ControlFilenameStartsWith = s3ControlFilenameStartsWith;
+		this.teradataRepository = teradataRepository;
+		this.csvMessageGetterRepository = csvMessageGetterRepository;
+		this.rdsMessageGetterRepository = rdsMessageGetterRepository;
+	}
+
+	public List < S3ObjectSummary > listS3Objects ( ) {
+		log.info ( "In the list of RDS snapshot S3 Service the S3 path is " + pollingEndpoint );
+		List < S3ObjectSummary > s3list = s3Client.listObjects ( pollingEndpoint );
+		return s3list;
+	}
+
+	public List < S3ObjectSummary > listControlFilesS3Objects ( ) {
+		log.info ( "In the list of Audit control S3 Service the S3 path is " + pollingEndpoint );
+		List < S3ObjectSummary > s3list = s3Client.listControlFileObjects ( pollingEndpoint );
+		return s3list;
+	}
+
+	public Boolean getS3Object ( ) throws ParseException, DatabaseSaveException {
+		log.info ( "In the Get RDS snapshot  S3 Service the S3 path is " + pollingEndpoint );
+		try {
+			String Date=  teradataRepository.getValuationDate ( ).toString ();
+			log.info ( "The Validation date  is " + Date );
+			LocalDate localDate= LocalDate.parse (Date.substring ( 0,10 ));
+			localDate=localDate.plusDays ( 2 );
+			log.info ( "The S3 file to be checked date"+ localDate);
+			String S3Key = "";
+			List < S3ObjectSummary > s3list = s3Client.listControlFileObjects ( pollingEndpoint );
+			for (S3ObjectSummary s : s3list) {
+				if ( s.getKey ( ).startsWith ( s3ControlFilePrefix + s3ControlFilenameStartsWith + localDate ) ){
+					S3Key = s.getKey ( );
+					log.info ( "The S3 key name " + S3Key );
+				}
+			}
+			List < AuditTableNames > tableslist = teradataRepository.getTableNameList ( );
+			log.info ( "The Tables names are " + tableslist );
+			log.info ( "Get object " + pollingEndpoint + S3Key );
+			int count=0;
+			S3Object s3Object = s3Client.getObjectFromS3 ( pollingEndpoint + S3Key );
+			if ( s3Object != null ) {
+				InputStream inputStream = s3Object.getObjectContent ( );
+				log.info ( "Input Stream is" + inputStream.toString ( ) );
+				CsvMapper csvMapper = new CsvMapper ( );
+				CsvSchema csvSchema = csvMapper.typedSchemaFor ( ExtractCsv.class ).withHeader ( ).withColumnSeparator ( ',' );
+				MappingIterator < ExtractCsv > readValues = csvMapper.readerWithTypedSchemaFor ( ExtractCsv.class ).with ( csvSchema ).readValues ( inputStream );
+				log.info ( "The read values are" );
+				List < ExtractCsv > users = readValues.readAll ( );
+				users.forEach ( System.out::println );
+					for (int i = 0; i < users.size ( ); i++) {
+					for (int j = 0; j < tableslist.size ( ); j++) {
+						if ((users.get (i).getTblName ()).equals (tableslist.get (j).getTableName ())) {
+							log.info ( "The matching csv table name is" + users.get ( i ).getTblName ());
+							log.info ( "The matching DB table name is" + tableslist.get ( j ).getTableName ( ) );
+							count++;
+							log.info("The CSV details are "+ users.get ( i ));
+							Boolean t = saveCsvData ( users.get ( i ) );
+						}
+					}
+
+				}
+					if(count >0){
+						log.info ( "Successfully get {} from {} and loaded into audit_inpt_t table" , s3Object.getBucketName ( ) , s3Object.getKey ( ) );
+						return true;
+					}
+					else {
+						log.info ( "The CSV table names does not match with audit table names list ");
+						return false;
+					}
+
+			} else {
+				log.info ( "Failed to  get S3 object from the path" + pollingEndpoint + S3Key );
+				return false;
+			}
+		}
+
+
+		catch (ParseException e) {
+		log.error("Failure on Parse Exception: ", e);
+		throw e;
+	}
+		catch (DatabaseSaveException e) {
+		log.error("Failure on database save: ", e);
+		throw new DatabaseSaveException(e);
+	}
+		catch ( IOException e ) {
+		log.error("Failure on IOException: ", e);
+		}
+		return false;
+
+	}
+
+	public Boolean getRdsSnapshotInfo ( ) throws IOException, S3DownloadException, ParseException, DatabaseSaveException {
+		String Date=  teradataRepository.getValuationDate ( ).toString ();
+		log.info ( "The Validation date  is " + Date );
+		org.joda.time.LocalDate localDate= org.joda.time.LocalDate.parse (Date.substring ( 0,10 ));
+		localDate=localDate.plusDays ( 2 );
+		log.info ( "The S3 file to be checked date"+ localDate);
+		String S3KeyRds = "";
+		List < S3ObjectSummary > s3list = s3Client.listObjects ( pollingEndpoint );
+		for (S3ObjectSummary s : s3list) {
+			if ( s.getKey ( ).startsWith ( s3RdsPrefix + s3RdsFilenameStartsWith + localDate ) ) {
+				S3KeyRds = s.getKey ( );
+				log.info ( "The S3 key name " + S3KeyRds );
+			}
+		}
+		S3Object s3ObjectRds = s3Client.getObjectFromS3 ( pollingEndpoint + S3KeyRds );
+		log.info ( "the get rds instance "+pollingEndpoint + S3KeyRds);
+		if (s3ObjectRds != null) {
+			try {
+				String s3FileContent = IOUtils.toString ( s3ObjectRds.getObjectContent ( ) , Charset.defaultCharset ( ) );
+
+				RdsInstanceDetails rdsInstanceDetails = s3ObjectParser.parseS3Object ( s3FileContent );
+				log.info ( "The RDS instance details are "+ rdsInstanceDetails.toString ());
+
+
+				dateTimeFormat.setTimeZone( TimeZone.getTimeZone("UTC"));
+				Date originalSnapshotCreateTime = dateTimeFormat.parse(rdsInstanceDetails.getRdsInfo ( ).getOriginalSnapshotCreateTime ( ));
+				log.info ( "originalSnapshotCreateTime UTC " + originalSnapshotCreateTime.toString ());
+
+				Calendar calendar = Calendar.getInstance();
+				calendar.setTime(originalSnapshotCreateTime);
+				dateTimeFormat.setTimeZone(TimeZone.getTimeZone("America/New_York"));
+				log.info ( "originalSnapshotCreateTime EST " + originalSnapshotCreateTime);
+
+				log.info(dateTimeFormat.format(originalSnapshotCreateTime));
+
+				String ccEndTime= dateFormat.format(originalSnapshotCreateTime) +" 02:00:00";
+				Date ccEndOfTime= dateTimeFormat.parse(ccEndTime);
+				log.info("CC End of time "+ccEndOfTime );
+
+				org.joda.time.LocalDate date =  org.joda.time.LocalDate.parse ( ccEndTime.substring (0, 10 ) );
+				org.joda.time.LocalDate datePrior=date.minusDays ( 1 );
+				Date valuationDte= java.sql.Date.valueOf ( String.valueOf ( datePrior ) );
+				log.info("valuationDte "+valuationDte);
+
+				String ccStarttime= dateFormat.format (valuationDte ) + " 02:00:00";
+				Date ccStartOftime= dateTimeFormat.parse(ccStarttime);
+				log.info("CC Start Time "+ccStartOftime);
+
+
+				RdsMessageGetterEntity rdsMessage = new RdsMessageGetterEntity ( );
+				rdsMessage.setEodValDte ( valuationDte );
+				rdsMessage.setSnapshotCreationDtm ( originalSnapshotCreateTime );
+				rdsMessage.setCcStartOfDyDtm ( ccStartOftime );
+				rdsMessage.setCcEndOfDyDtm ( ccEndOfTime );
+				log.info ( "Before inserting RDS data "+ rdsMessage);
+				try {
+					rdsMessageGetterRepository.save ( rdsMessage );
+					return true;
+				} catch ( Exception e ) {
+					log.error ( "Failure on database save: " , e );
+					throw new DatabaseSaveException ( e );
+				}
+			}
+			catch ( IOException e) {
+				log.error(e.getMessage());
+				throw new S3DownloadException("Message failed parsing into JSON");
+			}
+		} else {
+			log.info ( "No S3 Object found for given path " + pollingEndpoint + S3KeyRds );
+			return false;
+
+		}
+
+
+	}
+
+
+	public Boolean saveCsvData(ExtractCsv csv) throws DatabaseSaveException, ParseException{
+		CSVMessageGetterEntity message= new CSVMessageGetterEntity ();
+		message.setEodValDte ( dateFormat.parse ( csv.getBusnPrcsgDte () ) );
+		message.setSrcEntyNme (csv.getTblName ());
+		message.setSrcSysCde ("CC");
+		message.setAudtQtyDsc ("ROW COUNT");
+		message.setAudtQty (csv.getChngRowQty ());
+		log.info ( "Data Before Inserting into DB "+message);
+		try {
+			csvMessageGetterRepository.save ( message );
+		} catch (Exception e) {
+			log.error("Failure on database save: ", e);
+			throw new DatabaseSaveException(e);
+		}
+		return true;
+	}
+
+
+	public Boolean getHistoryS3Object () throws ParseException, DatabaseSaveException {
+		log.info ( "In the Get History S3 Service the S3 path is " + pollingEndpoint );
+		try {
+			String Date=  teradataRepository.getValuationDate ( ).toString ();
+			log.info ( "The Validation date  is " + Date );
+			LocalDate localDate= LocalDate.parse (Date.substring ( 0,10 ));
+			localDate=localDate.plusDays ( 2 );
+			log.info ( "The S3 file to be checked date"+ localDate);
+			String S3Key = "";
+			List < S3ObjectSummary > s3list = s3Client.listControlFileObjects ( pollingEndpoint );
+			for (S3ObjectSummary s : s3list) {
+				if ( s.getKey ( ).startsWith ( s3ControlFilePrefix+ s3ControlFilenameStartsWith + localDate) ) {
+					S3Key = s.getKey ( );
+					log.info ( "The S3 key name " + S3Key );
+				}
+			}
+			List < AuditTableNames > tableslist = teradataRepository.getHistoryTableNameList ();
+			log.info ( "The History Tables names are" + tableslist );
+			log.info ( "Get object" + pollingEndpoint + S3Key );
+			int count=0;
+			S3Object s3Object = s3Client.getObjectFromS3 ( pollingEndpoint + S3Key );
+			if ( s3Object != null ) {
+				InputStream inputStream = s3Object.getObjectContent ( );
+				log.info ( "Input Stream is" + inputStream.toString ( ) );
+				CsvMapper csvMapper = new CsvMapper ( );
+				CsvSchema csvSchema = csvMapper.typedSchemaFor ( ExtractCsv.class ).withHeader ( ).withColumnSeparator ( ',' );
+				MappingIterator < ExtractCsv > readValues = csvMapper.readerWithTypedSchemaFor ( ExtractCsv.class ).with ( csvSchema ).readValues ( inputStream );
+				log.info ( "The read values are" );
+				List < ExtractCsv > users = readValues.readAll ( );
+				users.forEach ( System.out::println );
+				for (int i = 0; i < users.size ( ); i++) {
+					for (int j = 0; j < tableslist.size ( ); j++) {
+						if ((users.get (i).getTblName ()).equals (tableslist.get (j).getTableName ())) {
+							log.info ( "The matching csv table name is" + users.get ( i ).getTblName ());
+							log.info ( "The matching DB table name is" + tableslist.get ( j ).getTableName ( ) );
+							count++;
+							log.info("The CSV details are "+ users.get ( i ));
+							Boolean t = saveCsvData ( users.get ( i ) );
+						}
+					}
+
+				}
+				if(count >0){
+					log.info ( "Successfully get {} from {} and loaded into audit_inpt_t table" , s3Object.getBucketName ( ) , s3Object.getKey ( ) );
+					return true;
+				}
+				else {
+					log.info ( "The CSV table names does not match with audit table names list ");
+					return false;
+				}
+			}
+
+			else {
+				log.info ( "Failed to  get S3 object from the path " + pollingEndpoint + S3Key );
+				return false;
+			}
+		}
+
+
+		catch (ParseException e) {
+			log.error("Failure on Parse Exception: ", e);
+			throw e;
+		}
+		catch (DatabaseSaveException e) {
+			log.error("Failure on database save: ", e);
+			throw new DatabaseSaveException(e);
+		}
+		catch ( IOException e ) {
+			log.error("Failure on IOException: ", e);
+		}
+		return false;
+}
+}
