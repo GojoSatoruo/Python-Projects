@@ -115,4 +115,31 @@ echo "$value": Prints the extracted value to the standard output.
 
 In summary, the extract_value function allows you to provide a JSON string and a key, and it will return the value associated with that key in the JSON object. The function handles JSON parsing, key-value extraction, and removes leading/trailing double quotes from the value if present.
 
+--------------------------------------------------------------
+main()
 
+The code provided defines a Bash script that performs a series of tasks related to the "Claim Balancing Process." Let's go through the code step-by-step to understand what it does:
+
+main(): This is the main function of the script. It serves as the entry point of the execution. It consists of several function calls that perform different tasks related to the Claim Balancing Process.
+
+USER="$(whoami)";: The whoami command is used to get the username of the current user, and its output is stored in the variable USER.
+
+log "running script as: $USER ";: The log function is called with the message "running script as: [username]", where [username] is the actual username of the current user.
+
+log "-----------Starting the Claim Balancing Process------------": The log function is called with the message "Starting the Claim Balancing Process."
+
+setEnvVars: This function is called to set various environment variables related to the Claim Balancing Process.
+
+setting_val_date: This function is called to set the Valuation Date, which seems to be a date used in the process.
+
+newtoken: This function is called to generate an OAuth2.0 token for the curl command. It seems to be involved in authentication for some API request.
+
+trigger_balancing_curl: This function is called to trigger the "triggerBalancing" operation, which starts the Claim Balancing Process. It uses the generated token to make a curl request to some API endpoint.
+
+status_check_for_balancing_curl: This function is called to check the status of the Claim Balancing Process after it has been triggered. It uses the generated token to make another curl request to a different API endpoint.
+
+main;: This line calls the main() function, initiating the Claim Balancing Process.
+
+if [[ ${errflg} -eq 0 ]];then ...: After the main function has completed, this conditional block checks the value of the errflg variable. If errflg is equal to 0, it means the process completed successfully, and the script exits with status code 0 (success). Otherwise, if errflg is not equal to 0, it indicates an error occurred during the process, and the script exits with status code 1 (failure).
+
+In summary, the script appears to be orchestrating a process related to Claim Balancing, including setting environment variables, generating OAuth2.0 token, triggering the process, checking its status, and handling potential errors during the process execution. The specific details of the process may depend on the implementations of the functions setEnvVars, setting_val_date, newtoken, trigger_balancing_curl, and status_check_for_balancing_curl.
