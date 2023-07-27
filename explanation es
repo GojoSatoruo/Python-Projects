@@ -1,0 +1,118 @@
+Log()
+The line defines a Bash function named log(). Let's break down what each part of the function does:
+
+arg=("$@");
+
+This line initializes an array variable named arg and assigns all the command-line arguments passed to the log() function to this array. The "$@" represents all the command-line arguments as separate elements in the array.
+echo "${VAL_DATE}: ${arg[0]}" >> $LOGFILE 2>&1;
+
+This line uses the echo command to print a log entry to the log file specified by the $LOGFILE environment variable. It also redirects the output of the echo command to the log file and suppresses any error messages by redirecting them to the standard output (stdout).
+${VAL_DATE} represents the value of the VAL_DATE environment variable. However, in the given script snippet, VAL_DATE is not defined in the log() function or in the env_vars file, so this part will result in a blank value.
+${arg[0]} accesses the first element of the arg array, which is the first command-line argument passed to the log() function. The function is designed to log the first argument as part of the log entry.
+Overall, the log() function is used to print log entries to the log file specified in the $LOGFILE environment variable. It is intended to be called with a single argument, and that argument will be logged along with the current value of the VAL_DATE environment variable (if defined). The use of an array (arg) to store the arguments allows for potential future expansion of the logging functionality to handle multiple arguments if needed.
+-----------------------------------
+jsonval()
+The jsonval function is intended to extract the value associated with a specific key (variable $prop) from a JSON-formatted string ($json). The function performs a series of operations using various Unix command-line tools (echo, sed, awk, and grep) to achieve this extraction.
+
+Let's break down the steps of the jsonval function:
+
+temp=: This line sets up a variable named temp, which will store the result of the JSON value extraction.
+
+echo $json: The echo command is used to print the JSON string stored in the $json variable.
+
+sed 's/\\\\\//\//g': This sed command replaces occurrences of \\/ with /. It's used to handle escaped forward slashes in the JSON string, converting them to regular forward slashes.
+
+sed 's/[{}]//g': This sed command removes curly braces ({}) from the JSON string. It removes the outer braces, leaving only the comma-separated key-value pairs.
+
+awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}': This awk command splits the JSON string into an array called a using commas as delimiters. It then loops through the array and prints each element (key-value pair) on separate lines.
+
+sed 's/\"\:\"/\|/g': This sed command replaces ":" with a vertical bar (|). It replaces the colon separating the key and value with a pipe character for easier processing.
+
+sed 's/[\,]/ /g': This sed command replaces all commas (,) with spaces. It removes any remaining commas, as they are no longer needed after the previous operations.
+
+sed 's/\"//g': This sed command removes all double quotes (") from the JSON string. It eliminates any remaining double quotes around the keys and values.
+
+grep -w $prop: This grep command searches for lines containing the specified key ($prop) in the modified JSON string. The -w option ensures that the exact word is matched, avoiding partial matches.
+
+echo ${temp##*|}: This echo command prints the value of the temp variable, but with the longest prefix matching *| removed. The purpose of this part is to remove the key from the key-value pair, leaving only the extracted value.
+
+In summary, the jsonval function takes a JSON string ($json) as input and extracts the value associated with the key specified in the variable $prop. The extracted value is then stored in the temp variable and printed to the standard output, allowing the calling code to use the extracted value for further processing.
+
+
+In the context of the echo ${temp##*|} command, the expression "longest prefix matching |" refers to a specific behavior of the Bash shell's parameter expansion feature.
+
+Let's break down the parameter expansion:
+
+
+
+${temp##*|}: This is a parameter expansion expression used to manipulate the value of the temp variable. The double hash (##) indicates that the longest matching prefix of the pattern (*|) will be removed from the value of the variable.
+
+*|: The pattern *| represents any characters followed by a vertical bar (|). The asterisk (*) is a wildcard that matches any sequence of characters.
+
+In summary, ${temp##*|} removes the longest prefix of the temp variable that matches the pattern *|. It effectively removes everything up to and including the last occurrence of the vertical bar (|) in the temp variable, leaving only the part of the string that comes after the last
+
+Explanation: The *| pattern matches the "age"| prefix in the temp variable, and the expansion removes this prefix, leaving only the value 30. The longest prefix is matched because the asterisk (*) is a greedy wildcard that matches the most characters possible.
+------------------------------------------------------
+
+1. sed 's/\\\\\//\//g': Replace \\/ with /
+
+In the provided example, the JSON string doesn't contain any occurrences of \\/, so no changes will be made by this sed command.
+2. sed 's/[{}]//g': Remove curly braces {}
+
+This sed command removes the curly braces {} from the JSON string, leaving only the comma-separated key-value pairs:
+
+3. awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}': Split into key-value pairs using commas as delimiters
+
+This awk command splits the JSON string into an array called a, using commas as delimiters. It then loops through the array and prints each element (key-value pair) on separate lines:
+
+
+4. sed 's/\"\:\"/\|/g': Replace ":" with |
+
+This sed command replaces the colons (":") separating the key and value with a vertical bar (|) for easier processing:
+
+
+5. sed 's/[\,]/ /g': Remove commas
+
+This sed command removes all commas (,), as they are no longer needed after previous operations:
+
+6. sed 's/\"//g': Remove double quotes (")
+
+This sed command removes all double quotes (") from the JSON string, eliminating any remaining double quotes around the keys and values:
+
+
+. grep -w $prop: Search for key "age" using grep -w
+
+In this example, let's assume $prop is set to "age". The grep -w "age" command searches for lines containing the specified key ("age"):
+
+8. echo ${temp##*|}: Remove the key "age"| (longest prefix matching |)
+
+In this example, the variable temp contains the result of the grep command (age| 30). The ${temp##*|} parameter expansion removes the longest prefix of the temp variable that matches the pattern *|. It effectively removes the key "age"|, leaving only the value 30
+
+
+In the end, the jsonval function successfully extracts the value 30 associated with the key "age" from the original JSON string. This demonstrates how each command (sed, awk, and grep) is used to manipulate the JSON string and extract the desired value
+
+------------------------------------------------------------------
+
+extract_value()
+
+The extract_value function takes two arguments: a JSON-formatted string (json) and a key (key). Its purpose is to extract the value associated with the given key from the JSON string.
+
+Let's go through each step of the function:
+
+json="$1": Assigns the first argument passed to the function to the variable json, which contains the JSON-formatted string.
+
+key="$2": Assigns the second argument passed to the function to the variable key, which contains the key for which we want to extract the value.
+
+json=$(echo "$json" | tr -d '[:space:]'): Removes all whitespace characters (spaces, tabs, and line breaks) from the JSON string. This step is done to ensure that there are no spaces affecting the key-value parsing.
+
+line=$(echo "$json" | grep -o "\"$key\":[^,}]*"): Uses grep to search for the key in the JSON string. The -o option tells grep to output only the matched part. The pattern used in grep is \"$key\":[^,}]*, which matches the given key (surrounded by double quotes) followed by a colon, and then captures all characters until it reaches a comma or closing curly brace. This effectively captures the entire value associated with the key in the variable line.
+
+value=$(echo "$line" | cut -d ":" -f 2-): Uses cut to split the line variable using the colon (:) as the delimiter and extracts the part of the line after the colon (the value). The -f 2- option tells cut to include all fields starting from the second field. This extracts the value associated with the key into the value variable.
+
+value="${value%\"}" and value="${value#\"}": Removes any leading and trailing double quotes (") from the value. This step is necessary because the value extracted from the JSON string might be enclosed in double quotes.
+
+echo "$value": Prints the extracted value to the standard output.
+
+In summary, the extract_value function allows you to provide a JSON string and a key, and it will return the value associated with that key in the JSON object. The function handles JSON parsing, key-value extraction, and removes leading/trailing double quotes from the value if present.
+
+
