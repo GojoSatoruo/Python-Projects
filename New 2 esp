@@ -1,0 +1,198 @@
+#!/bin/bash
+
+LOGFILE=/usr/apps/ciadw/adwfncwc/logs/Claimbalancing.log
+
+source ./env_vars
+
+> "${LOGFILE}"
+
+
+log() {
+    arg=("$@");
+    echo "${VAL_DATE}: ${arg[0]}" >> $LOGFILE 2>&1;
+}
+
+
+setEnvVars(){
+	log "Setting the Environment Variable......."
+	
+	log "Setting the Oauth2.0 Token Url....."
+	AUTH_VAR=echo "Oauth Token Url: $AUTH_VAR"
+	log "Setting Oauth Token Url as: $AUTH_VAR"
+
+	log "Setting the Client ID....."
+	CLIENT_ID="$CLIENT_ID"	
+	log "Client Id is set....."
+	
+	log "Setting the Client Secret...."
+	CLIENT_SECRET="$CLIENT_SECRET"	
+	log "Client Secret is set....."
+
+	log "Setting the API Gateway Host...."
+	API_GATEWAY_HOST=$API_GATEWAY_HOST	
+	log "API Gateway Host is set....."
+
+	log "Setting the Process Name...."
+	Process_Name=$Process_Name	
+	log "Process Name is set as :$Process_Name....."
+
+
+	log "Setting the Trigger URL for Starting the Claim Balancing...."
+	trigger_url=$trigger_url	
+	log "Trigger Url is set: $trigger_url"
+
+	log "Setting the Status Check Endpoint for Checking the status of Claim Balancing...."
+	status_url=$trigger_url	
+	log "Status URL is set: $status_url"
+
+	log "---------------Environment Variables are set successfully------------------"
+	
+}
+
+
+function jsonval {
+   temp=`echo $json | sed 's/\\\\\//\//g' | sed 's/[{}]//g' | awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | sed 's/\"\:\"/\|/g' | sed 's/[\,]/ /g' | sed 's/\"//g' | grep -w $prop`
+    echo ${temp##*|}
+}
+
+newtoken() {
+	log "------------Generating the Oauth2.0 Token for curl----------"
+        echo "jsonval:$jsonval";
+        json=`curl -X POST -d "grant_type=client_credentials&client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET&scope=lambda_execute&client_authentication=Send as Basic Auth header" $AUTH_VAR -k`;
+        echo "json:$json";
+        prop='access_token';
+        #echo "prop:$prop";
+        token=`jsonval`;
+        echo $token;
+}
+
+#newtoken;
+
+#echo "$(date "+%Y-%m-%d­­­­­")"
+
+#response=$(curl -s --header "Authorization: Bearer ${token}" --header "Host: $API_GATEWAY_HOST" ${trigger_url});
+
+#log "Status Code: ${response}"
+#status=$(echo "${response[0]}")
+#echo $status
+
+
+trigger_balancing_curl(){
+	
+	log "Triggering the triggerBalancing to start the Claim Balancing"
+	
+	errflg=0;
+	
+	log ".............Checking the response status Code for Curl------------"
+	
+	status_code=$(curl -Ssoi -w "%{http_code}"  --header "Authorization: Bearer ${token}" --header "Host: $API_GATEWAY_HOST" $trigger_url -k);
+	
+	log "Status code after Triggering Claim Balancing: ${status_code}"
+	
+	if [[ ${status_code} -eq 200 ]];then
+		log "--------------Successfully started the Claim Balancing Process------------"
+		log "Sleeping for 60s....."
+		sleep 60s
+	else
+		log "Claim Blancing failed to start......"
+		log "Response: ${response}"
+		errflg=1;
+		send_email_notification
+		exit 1;	
+	fi
+}
+
+status_check_for_balancing_curl(){
+	log "Checking the Status of Claim Balancing........."
+	log "Setting the error Flag as zero"
+	errflg=0;
+	flag=Success
+	log "Curling the Status Check V2 endpoint...."
+	status_resposnse=$(curl -s --header "Authorization: Bearer ${token}" --header "Host: $API_GATEWAY_HOST" $status_url);
+	log "Grabbing the Status key and its value for Claim Balancing....."
+	balancing_status_check=$(extract_value "$status_resposnse" "Status");
+	log "Claim Balancing Status Check:  ${balancing_status_check}"	
+	
+	log "Checking the Status value is matching the condition...."
+	if [[ ${balancing_status_check} == ${flag} ]];then
+		log "----------------Claim Balancing is Successful-----------"		
+		exit 0; 
+	else
+		log "----------Claim Balancing Failed-------------"
+		log "Response: ${status_resposnse}"
+		errflg=1;
+		send_email_notification
+	fi		
+}
+
+
+extract_value(){
+	json="$1"
+	key="$2"
+	json=$(echo "$json" | tr -d '[:space:]')
+	line=$(echo "$json" | grep -o "\"$key\":[^,}]*")
+	value=$(echo "$line" | cut -d ":" -f 2-)
+	value="${value%\"}"
+	value="${value#\"}"
+	echo "$value"
+}
+
+setting_val_date(){
+	log "Setting the Valuation Date"
+	today=$(date +%Y-%m-%d)
+	log "Getting the day of the Week as Number like 0=Sunday, 1=Monday..."
+	day_of_week=$(date +%w)
+	log "Day of the week: $day_of_week"
+	log "Calculating the number of days to subtract based on the day of week....."
+	if [[ $day_of_week -eq 2 ]];then
+		day_to_subtract=0
+	elif [[ $day_of_week -eq 0 ]];then
+		day_to_subtract=2
+	else	
+		day_to_subtract=1
+	fi
+	
+	log "Setting the Valuation Date for Trigger of Claim Balancing..."
+	val_date=$(date -d "$today-$day_to_subtract day" +%Y-%m-%d)
+	log "Setting the Valuation Date as : $val_date"	
+}
+
+send_email_notification(){
+	log "Sending the email notification to Support Group......."
+	SUPPORT_GROUP_EMAIL="GRS_L3_DM_FastFREDs@LibertyMutual.com"
+	SUBJECT="Development - ADW WC Claim Balancing Process $balancing_status_check - $val_date"
+	body+="Claim Balancing Process completed with Status: ${balancing_status_check}"
+	log "----------------- Email attempt sent. this is the end of the log ------------------";	
+	echo "$body" | mail -s "$SUBJECT" -a "$LOGFILE" "$SUPPORT_GROUP_EMAIL"
+}
+
+main(){
+	USER="$(whoami)";    
+    	log "running script as: $USER ";
+	log "-----------Starting the Claim Balancing Process------------"
+	setEnvVars
+	setting_val_date
+	newtoken
+	trigger_balancing_curl
+	status_check_for_balancing_curl		
+}
+
+main;
+
+if [[ ${errflg} -eq 0 ]];then
+	exit 0;
+else
+	exit 1;
+fi
+
+------------------------------------------------------------------------------------------------------------------------
+
+token="";
+CLIENT_ID=ci_adwbalancingservice_1
+CLIENT_SECRET=558e99b8-c74f-40f5-b267-67528ea30f73
+VAL_DATE="2023-05-30"
+AUTH_VAR=https://test-lmidp.libertymutual.com/as/token.oauth2?aud=https://adw-balancing-process.development.amazon-web-services-049560152226-us-east-1
+Process_Name=claim
+API_GATEWAY_HOST=nr8rjyazkh.execute-api.us-east-1.amazonaws.com
+trigger_url="https://vpce-0c5fd2f7b1e8384d1-bdsy1pi0-us-east-1b.execute-api.us-east-1.vpce.amazonaws.com/development/triggerBalancing?ValuationDate=$VAL_DATE&ProcessName=$Process_Name"
+status_url="https://vpce-0c5fd2f7b1e8384d1-bdsy1pi0-us-east-1b.execute-api.us-east-1.vpce.amazonaws.com/development/statusCheck?ValuationDate=$VAL_DATE&ProcessName=$Process_Name"
