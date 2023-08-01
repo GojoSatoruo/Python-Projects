@@ -134,3 +134,65 @@ echo "$(date "+%m%d%Y %T") : The status is Success for Claim Service Financial E
 
 
 exit 0
+
+
+This is a Bash shell script that appears to be responsible for some logging, token generation, and making HTTP requests to certain endpoints. Let's go through the code line by line to understand its functionality:
+
+
+#!/bin/bash
+
+LOGFILE=/usr/apps/ciadw/adwfncwc/logs/ADW_WC_S3_Prep.log
+
+# The script starts by defining a logfile path, where the logs will be written.
+
+echo "$(date "+%m%d%Y %T") : [INFO] Starting work" >> $LOGFILE 2>&1
+
+# The current date and time are printed to the log file along with an INFO message.
+
+token="";
+ADW_PING_ID=ci_wcfinenrichclnc_1
+PING_SECRET=f65857d9-ada6-4f07-b92e-c2e2c57c52fe
+AUTH_VAR=https://test-lmidp.libertymutual.com/as/token.oauth2?aud=https://adw-wc-financial-enrichments.development.cloud-foundry-non-prod-us-east-1
+targetURL=https://adw-wc-financial-enrichments-development.us-east-1.np.paas.lmig.com
+
+# Some variables are initialized, including token, ADW_PING_ID, PING_SECRET, AUTH_VAR, and targetURL.
+
+function jsonval {
+    temp=`echo $json | sed 's/\\\\\//\//g' | sed 's/[{}]//g' | awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | sed 's/\"\:\"/\|/g' | sed 's/[\,]/ /g' | sed 's/\"//g' | grep -w $prop`
+    echo ${temp##*|}
+}
+
+# A function named jsonval is defined. This function takes the input JSON data and extracts the value of a specific property (prop).
+
+newtoken() {
+    echo "jsonval:$jsonval";
+    json=`curl -X POST -d "grant_type=client_credentials&client_id=$ADW_PING_ID&client_secret=$PING_SECRET&scope=WC.EOD.NOTIFICATION.PUBLISHER&client_authentication=Send as Basic Auth header" $AUTH_VAR -k`;
+    echo "json:$json";
+    prop='access_token';
+    token=`jsonval`;
+    echo $token;
+}
+
+# Another function named newtoken is defined. This function makes a POST request to a certain URL to generate a bearer token (access_token).
+
+echo "$(date "+%m%d%Y %T") : [INFO] $targetURL" >> $LOGFILE 2>&1
+
+# The targetURL is printed to the log file with an INFO message.
+
+httpCode=$(curl -Ssoi -w "%{http_code}" -k $targetURL/health)
+
+# An HTTP request is made to the targetURL's /health endpoint, and the HTTP response code is stored in the httpCode variable.
+
+The script then uses a case statement to handle different httpCode values:
+
+- If httpCode is 000, it indicates that the host or certificate cannot be resolved, and an error message is logged.
+- If httpCode is 200, it indicates that the service is running, and a success message is logged.
+- If httpCode is 404, it indicates that the URL is not found or the service is not running, and an error message is logged.
+- If httpCode is 401, it indicates an unauthorized request, and an error message is logged.
+- For any other httpCode, an error message is logged.
+
+The script then enters into a loop that calls the newtoken function and checks the response from certain endpoints. The response is obtained from the curl commands using the access_token obtained from the newtoken function. The script logs the response and sleeps for 60 seconds before retrying.
+
+Finally, the script exits with code 0, indicating a successful execution.
+
+Overall, this script seems to be responsible for checking the health status of certain endpoints, generating a token, and interacting with certain services through HTTP requests. It is likely part of a larger system or automation process.
