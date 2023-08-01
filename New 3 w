@@ -1,0 +1,136 @@
+#!/bin/bash
+
+LOGFILE=/usr/apps/ciadw/adwfncwc/logs/ADW_WC_S3_Prep.log
+
+echo "$(date "+%m%d%Y %T") : [INFO] Starting work" >> $LOGFILE 2>&1
+
+
+token="";
+ADW_PING_ID=ci_wcfinenrichclnc_1
+PING_SECRET=f65857d9-ada6-4f07-b92e-c2e2c57c52fe
+AUTH_VAR=https://test-lmidp.libertymutual.com/as/token.oauth2?aud=https://adw-wc-financial-enrichments.development.cloud-foundry-non-prod-us-east-1
+targetURL=https://adw-wc-financial-enrichments-development.us-east-1.np.paas.lmig.com
+
+
+function jsonval {
+   temp=`echo $json | sed 's/\\\\\//\//g' | sed 's/[{}]//g' | awk -v k="text" '{n=split($0,a,","); for (i=1; i<=n; i++) print a[i]}' | sed 's/\"\:\"/\|/g' | sed 's/[\,]/ /g' | sed 's/\"//g' | grep -w $prop`
+    echo ${temp##*|}
+}
+
+#Generating the bearer token to hit the end point each time.ADW_PING_ID and PING_SECRET are the secrets taken from the cloud forge artifact "ADW WC Financial Enrichments"
+newtoken() {
+        echo "jsonval:$jsonval";
+        json=`curl -X POST -d "grant_type=client_credentials&client_id=$ADW_PING_ID&client_secret=$PING_SECRET&scope=WC.EOD.NOTIFICATION.PUBLISHER&client_authentication=Send as Basic Auth header" $AUTH_VAR -k`;
+        echo "json:$json";
+        prop='access_token';
+        #echo "prop:$prop";
+        token=`jsonval`;
+        echo $token;
+}
+
+echo "$(date "+%m%d%Y %T") : [INFO] $targetURL" >> $LOGFILE 2>&1
+
+#-----------------------------------------------------------------------------
+# Check service status
+#-----------------------------------------------------------------------------
+#
+# endpoint: /health
+#
+# httpCode:
+#                 ---   ERROR CODES ---
+#           000 - cant resolve host or cert
+#           404 - cant find URL / service not running
+# 		      401 - unauthorized
+#           ??? - untrapped error
+#
+#                 ---   SUCCESS CODES ---
+#           200 - service is running
+#
+#-----------------------------------------------------------------------------
+
+httpCode=$(curl -Ssoi -w "%{http_code}" -k $targetURL/health)
+
+
+case ${httpCode} in
+      000) echo "$(date "+%m%d%Y %T") : [ERROR] /health: $httpCode: Cant Resolve Host" >> $LOGFILE 2>&1
+           exit 99 ;;
+      200) echo "$(date "+%m%d%Y %T") : [INFO] /health: $httpCode: Successful Request - Status:UP" >> $LOGFILE 2>&1
+                   ;;
+      404) echo "$(date "+%m%d%Y %T") : [ERROR] /health: $httpCode: URL Not Found/Not Running?" >> $LOGFILE 2>&1
+           exit 4  ;;
+	  401) echo "$(date "+%m%d%Y %T") : [ERROR] /health: $httpCode: unauthorized - Full authentication is required to access this resource" >> $LOGFILE 2>&1
+           exit 4  ;;
+        *) echo "$(date "+%m%d%Y %T") : [ERROR] /health: $httpCode: Unknown http code" >> $LOGFILE 2>&1
+           exit 99 ;;
+esac
+
+response=0
+
+while [[ ${response} < 1 ]]
+do
+  newtoken;
+  if [ -z "$token" ]
+		then
+		echo "$(date "+%m%d%Y %T") : token is NULL and not hitting the Claims Finanical Enrichment end point" >> $LOGFILE 2>&1
+	else
+		echo "$(date "+%m%d%Y %T") : token is valid and hitting the Claims Finanical Enrichment end point" >> $LOGFILE 2>&1
+		# Below end point will check the Success status in audt_prcsg_qty_stts_dsc column for adw_wc_finl_activitiy_cntl_tbl_t table 
+  response=$(curl --header "Authorization: Bearer ${token}" $targetURL/auditBalance/ClaimsFinancialEnrichment -k)
+	fi
+
+echo "$(date "+%m%d%Y %T") : Response from java Claims Finanical Enrichment : ${response}" >> $LOGFILE 2>&1
+echo ${response}
+sleep 60s
+done
+
+echo "$(date "+%m%d%Y %T") : The status is Success for Claims Finanical Enrichment" >> $LOGFILE 2>&1
+
+
+
+response=0
+
+while [[ ${response} < 1 ]]
+do
+  newtoken;
+  if [ -z "$token" ]
+		then
+		echo "$(date "+%m%d%Y %T") : token is NULL and not hitting the Claims Recovery Card Financial Enrichment end point" >> $LOGFILE 2>&1
+	else
+		echo "$(date "+%m%d%Y %T") : token is valid and hitting the Claims Recovery Card Financial Enrichment end point" >> $LOGFILE 2>&1
+		# Below end point will check the Success status in audt_prcsg_qty_stts_dsc column for adw_wc_finl_activitiy_cntl_tbl_t table 
+  response=$(curl --header "Authorization: Bearer ${token}" $targetURL/auditBalance/ClaimsRecoveryCardFinancialEnrichment -k)
+	fi
+
+echo "$(date "+%m%d%Y %T") : Response from java Claims Recovery Card Financial Enrichment : ${response}" >> $LOGFILE 2>&1
+echo ${response}
+sleep 60s
+done
+
+echo "$(date "+%m%d%Y %T") : The status is Success for Claims Recovery Card Financial Enrichment" >> $LOGFILE 2>&1
+
+
+
+
+response=0
+
+while [[ ${response} < 1 ]]
+do
+  newtoken;
+  if [ -z "$token" ]
+		then
+		echo "$(date "+%m%d%Y %T") : token is NULL and not hitting the Claim Service Financial Enrichment end point" >> $LOGFILE 2>&1
+	else
+		echo "$(date "+%m%d%Y %T") : token is valid and hitting the Claim Service Financial Enrichment end point" >> $LOGFILE 2>&1
+		# Below end point will check the Success status in audt_prcsg_qty_stts_dsc column for adw_wc_finl_activitiy_cntl_tbl_t table 
+  response=$(curl --header "Authorization: Bearer ${token}" $targetURL/auditBalance/ClaimServiceFinancialEnrichment -k)
+	fi
+
+echo "$(date "+%m%d%Y %T") : Response from java Claim Service Financial Enrichment end point: ${response}" >> $LOGFILE 2>&1
+echo ${response}
+sleep 60s
+done
+
+echo "$(date "+%m%d%Y %T") : The status is Success for Claim Service Financial Enrichment end point" >> $LOGFILE 2>&1
+
+
+exit 0
