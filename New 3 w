@@ -196,3 +196,55 @@ The script then enters into a loop that calls the newtoken function and checks t
 Finally, the script exits with code 0, indicating a successful execution.
 
 Overall, this script seems to be responsible for checking the health status of certain endpoints, generating a token, and interacting with certain services through HTTP requests. It is likely part of a larger system or automation process.
+
+
+-----------------
+
+
+import static org.mockito.Mockito.*;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+public class YourClassNameTest {
+
+    @Test
+    public void testRetrieveK160AffiliateClaims() throws Exception {
+        // Mock dependencies
+        SDSRestClientServiceHelper helperMock = mock(SDSRestClientServiceHelper.class);
+        RestTemplate restTemplateMock = mock(RestTemplate.class);
+        RetrieveK160AffiliateClaimsResponse responseMock = mock(RetrieveK160AffiliateClaimsResponse.class);
+
+        // Create instance of your class
+        YourClassName service = new YourClassName();
+
+        // Set dependencies
+        service.setBearerToken("dummyBearerToken");
+        service.setHelper(helperMock);
+        service.setRestTemplate(restTemplateMock);
+
+        // Mock behavior
+        when(helperMock.obtainBearerToken(any(), any(), any(), any(), any(), any())).thenReturn("dummyBearerToken");
+        when(helperMock.retrieveK160AffiliateClaims(anyString(), anyShort(), anyInt(), anyShort(), anyString()))
+                .thenReturn("dummyJsonRequest");
+        when(service.validateTokenAndCallSDS(any(), anyString(), anyString())).thenReturn("dummyResponseBody");
+        when(responseMock.getK160Row()).thenReturn(new ArrayList<>()); // Adjust as per your implementation
+
+        // Call the method
+        List<K160ClaimJson> result = service.retrieveK160AffiliateClaims("serviceType", (short) 1, 123, (short) 1,
+                "affiliateClaim");
+
+        // Verify interactions
+        verify(helperMock).obtainBearerToken(any(), any(), any(), any(), any(), any());
+        verify(helperMock).retrieveK160AffiliateClaims(anyString(), anyShort(), anyInt(), anyShort(), anyString());
+        verify(service).validateTokenAndCallSDS(any(), anyString(), anyString());
+        verify(restTemplateMock, never()).postForObject(anyString(), any(), any());
+
+        // Assert the result
+        Assertions.assertNotNull(result);
+        Assertions.assertTrue(result.isEmpty()); // Adjust as per your implementation
+    }
+}
